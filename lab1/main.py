@@ -25,8 +25,9 @@ class TFIDF:
 
     def train(self, corpus):
         self.corpus_length = len(corpus)
-        for sentence in corpus:
-            words = words_to_lower(get_words(sentence))
+        print(f"Corpus length: {self.corpus_length}")
+        for text in corpus:
+            words = words_to_lower(get_words(text))
             words = list(set(words))
             for word in words:
                 if word in self.f_D:
@@ -52,12 +53,19 @@ class TFIDF:
             f_D_value = self.f_D.get(word, 1)
             idf = math.log(self.corpus_length / f_D_value)
             tfidf[word] = tf * idf
-        return sorted(tfidf.items(), key=lambda x: x[1], reverse=True)
+        return sorted(tfidf.items(), key=lambda x: x[0], reverse=True)
 
 
 class Summarizer:
-    def __init__(self, tfidf_scores) -> None:
+    def __init__(self, tfidf_scores, tfisf_scores) -> None:
         self.tfidf_scores = tfidf_scores
+        self.tfisf_scores = tfisf_scores
+
+    def get_combined_score(self, tfidf_score, tfisf_score):
+        max_tfidf = max(self.tfidf_scores, key=lambda x: x[1])[1]
+        max_tfisf = max(self.tfisf_scores, key=lambda x: x[1])[1]
+
+        return (tfidf_score / max_tfidf) * (tfisf_score / max_tfisf)
 
     def summarize(self, text, n):
         sentences = get_sentences(text)
@@ -66,9 +74,10 @@ class Summarizer:
             words = words_to_lower(get_words(sentence))
             score = 0
             for word in words:
-                for tfidf_word, tfidf_score in self.tfidf_scores:
-                    if word == tfidf_word:
-                        score += tfidf_score
+                scores = zip(tfidf_scores, tfisf_scores)
+                for (tfidf_word, tfidf_score), (tfisf_word, tfisf_score) in scores:
+                    if tfidf_word == word and tfisf_word == word:
+                        score += self.get_combined_score(tfidf_score, tfisf_score)
             sentences_scores.append((sentence, score))
         sentences_scores = sorted(sentences_scores, key=lambda x: x[1], reverse=True)
         return sentences_scores[:n]
@@ -87,13 +96,30 @@ if __name__ == "__main__":
 
     tfidf_scores = tfidf.get_tfidf(document_to_summarize)
 
+    tfisf = TFIDF()
+    tfisf.train(get_sentences(document_to_summarize))
+
+    tfisf_scores = tfisf.get_tfidf(document_to_summarize)
+
+    summarizer = Summarizer(tfidf_scores, tfisf_scores)
+
     table = []
-    headers = ["Word", "Score"]
-    for word, score in tfidf_scores:
-        table.append([word, score])
+    headers = ["TFIDF Word", "TFIDF Score", "TFISF", "TFISF Score", "Combined Score"]
+
+    scores = zip(tfidf_scores, tfisf_scores)
+    for (tfidf_word, tfidf_score), (tfisf_word, tfisf_score) in scores:
+        table.append(
+            [
+                tfidf_word,
+                tfidf_score,
+                tfisf_word,
+                tfisf_score,
+                summarizer.get_combined_score(tfidf_score, tfisf_score),
+            ]
+        )
+    table = sorted(table, key=lambda x: x[4], reverse=True)
     print(tabulate.tabulate(table, headers, tablefmt="grid"))
 
-    summarizer = Summarizer(tfidf_scores)
     summary = summarizer.summarize(document_to_summarize, 3)
 
     table = []
